@@ -28,11 +28,10 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920x1080")
-    chrome_options.binary_location = "/usr/bin/chromium"  # Use system chromium
+    chrome_options.binary_location = "/usr/bin/chromium"  # ✅ Use system chromium
 
-    service = Service("/usr/bin/chromedriver")  # Use matching system chromedriver
+    service = Service("/usr/bin/chromedriver")  # ✅ Use matching system chromedriver
     return webdriver.Chrome(service=service, options=chrome_options)
-
 
 # ==================================================================
 # === Helper Functions for Stale Elements ===
