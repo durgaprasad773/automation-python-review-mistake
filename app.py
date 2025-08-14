@@ -7,6 +7,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium import webdriver
+
+from selenium.webdriver.chrome.options import Options
 import time
 from datetime import datetime
 
@@ -15,15 +18,18 @@ from datetime import datetime
 # ==================================================================
 @st.cache_resource
 def setup_driver():
-    """Setup Chrome WebDriver for local execution"""
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")  # New headless mode
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920x1080")
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    """Setup Chromium WebDriver for Streamlit Cloud"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920x1080")
+    chrome_options.binary_location = "/usr/bin/chromium"  # ✅ Use system chromium
+
+    service = Service("/usr/bin/chromedriver")  # ✅ Use matching system chromedriver
+    return webdriver.Chrome(service=service, options=chrome_options)
+
 
 # ==================================================================
 # === Helper Functions for Stale Elements ===
