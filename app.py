@@ -1,23 +1,19 @@
 import streamlit as st
 import pandas as pd
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium import webdriver
-
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 from datetime import datetime
 
 # ==================================================================
-# === Chrome Driver Setup (Local Execution) ===
+# === Chrome Driver Setup (Version-Agnostic) ===
 # ==================================================================
-
 @st.cache_resource
 def setup_driver():
     """Setup Chrome WebDriver using webdriver_manager"""
@@ -27,17 +23,15 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920x1080")
-    
-    # Let webdriver_manager handle versioning
+
+    # Automatically get matching ChromeDriver for installed Chromium/Chrome
     service = Service(ChromeDriverManager().install())
     return webdriver.Chrome(service=service, options=chrome_options)
-
 
 # ==================================================================
 # === Helper Functions for Stale Elements ===
 # ==================================================================
 def get_stale_proof_text(driver, locator, max_attempts=5):
-    """Get element text, retrying if stale."""
     attempts = 0
     while attempts < max_attempts:
         try:
@@ -50,7 +44,6 @@ def get_stale_proof_text(driver, locator, max_attempts=5):
     raise Exception(f"Could not get text from {locator}")
 
 def stale_proof_click(driver, locator, max_attempts=5):
-    """Click element, retrying if stale."""
     attempts = 0
     while attempts < max_attempts:
         try:
@@ -122,7 +115,7 @@ def perform_automation(username, password, assessment_data):
             wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             st.write(f"Processing {assess_id}... (date {completion_dt})")
 
-            # TODO: Insert your full automation steps here (click, fill form, etc.)
+            # TODO: Insert your full automation steps here
             result["Status"] = "Success"
             result["Details"] = "Processed successfully"
 
