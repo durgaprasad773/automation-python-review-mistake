@@ -9,12 +9,35 @@ from selenium.common.exceptions import StaleElementReferenceException, TimeoutEx
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 from datetime import datetime
+import os
+
+# ==================================================================
+# === Optimized Chrome Driver Setup for Streamlit Cloud ===
+# ==================================================================
+@st.cache_resource
+def setup_driver():
+    """Setup Chrome WebDriver with Streamlit Cloud compatibility"""
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920x1080")
+    options.add_argument("--remote-debugging-port=9222")
+    
+    # Streamlit Cloud specific configuration
+    options.binary_location = "/usr/bin/google-chrome"
+    
+    # Install ChromeDriver
+    service = Service(ChromeDriverManager().install())
+    
+    return webdriver.Chrome(service=service, options=options)
 
 # ==================================================================
 # === The "Nuke-Proof" Self-Healing Functions ===
 # ==================================================================
 def get_stale_proof_text(driver, locator, max_attempts=5):
-    """ The most robust way to get text from an element that might go stale. """
+    """Robust way to get text from an element that might go stale."""
     attempts = 0
     while attempts < max_attempts:
         try:
@@ -27,7 +50,7 @@ def get_stale_proof_text(driver, locator, max_attempts=5):
     raise Exception(f"Could not get text from element at {locator} after {max_attempts} attempts.")
 
 def stale_proof_click(driver, locator, max_attempts=5):
-    """ The most robust way to click an element that might go stale. """
+    """Robust way to click an element that might go stale."""
     attempts = 0
     while attempts < max_attempts:
         try:
@@ -40,16 +63,15 @@ def stale_proof_click(driver, locator, max_attempts=5):
             time.sleep(1)
     raise Exception(f"Could not click the element at {locator} after {max_attempts} attempts.")
 
-
-# --- This is the Definitive, Complete, and Final Automation Script ---
+# ==================================================================
+# === Main Automation Function ===
+# ==================================================================
 def perform_automation(username, password, assessment_data):
-    
+    """Main automation function to process assessments."""
     # Setup Selenium WebDriver
     try:
         st.info("🚀 Launching the automation robot...")
-        service = Service(ChromeDriverManager().install())
-        options = webdriver.ChromeOptions()
-        driver = webdriver.Chrome(service=service, options=options)
+        driver = setup_driver()
         wait = WebDriverWait(driver, 20)
         st.success("✅ Robot launched successfully.")
     except Exception as e:
@@ -59,7 +81,6 @@ def perform_automation(username, password, assessment_data):
     # 1. Login Process
     try:
         st.info("Navigating to the login page...")
-        # === THIS IS THE CORRECTED URL ===
         base_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/"
         driver.get(base_url)
         st.info("Entering credentials...")
@@ -85,32 +106,41 @@ def perform_automation(username, password, assessment_data):
         return
         
     progress_bar = st.progress(0)
+    results = []
     
     # Main loop for each assessment
     for i, line in enumerate(lines):
         st.markdown(f"<hr>", unsafe_allow_html=True)
+        result = {"ID": "", "Status": "Failed", "Details": ""}
         try:
             # Parse the input line
             parts = line.split(',')
             if len(parts) != 2:
                 st.warning(f"Skipping malformed line ({i+1}): '{line}'. Please use 'ID, YYYY-MM-DD HH:MM:SS' format.")
+                result["Details"] = "Malformed input line"
+                results.append(result)
                 progress_bar.progress((i + 1) / total_lines)
                 continue
             
             original_assess_id = parts[0].strip()
             completion_time_str = parts[1].strip()
+            result["ID"] = original_assess_id
             
             st.write(f"▶️ **Processing ({i+1}/{total_lines}): {original_assess_id}**")
 
-            # ==================================================================
-            #                          STEP 1: Create Review Config
-            # ==================================================================
+            # STEP 1: Create Review Config
             st.subheader("Step 1: Creating Review Config")
-            
             try:
                 completion_dt = datetime.strptime(completion_time_str, '%Y-%m-%d %H:%M:%S')
             except ValueError:
-                completion_dt = datetime.strptime(completion_time_str, '%Y-%m-%d %H:%M')
+                try:
+                    completion_dt = datetime.strptime(completion_time_str, '%Y-%m-%d %H:%M')
+                except ValueError:
+                    st.error(f"Invalid datetime format for {original_assess_id}. Use 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD HH:MM'")
+                    result["Details"] = "Invalid datetime format"
+                    results.append(result)
+                    progress_bar.progress((i + 1) / total_lines)
+                    continue
             
             add_config_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/nw_assessments_core/orgassessreviewconfig/add/"
             current_dt = datetime.now()
@@ -133,10 +163,10 @@ def perform_automation(username, password, assessment_data):
             driver.find_element(By.NAME, "_save").click()
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "li.success")))
             st.success("✅ Step 1 complete.")
+            result["Status"] = "Success"
+            result["Details"] += "Review config created; "
 
-            # ==================================================================
-            #                          STEP 2: Find New Assessment ID
-            # ==================================================================
+            # STEP 2: Find New Assessment ID
             st.subheader("Step 2: Finding New Assessment ID")
             org_assess_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/nw_assessments_core/organisationassessment/"
             driver.get(org_assess_url)
@@ -149,10 +179,9 @@ def perform_automation(username, password, assessment_data):
             new_assess_id_locator = (By.CSS_SELECTOR, "#result_list td.field-assessment_id")
             new_assessment_id = get_stale_proof_text(driver, new_assess_id_locator)
             st.success(f"✅ Found new assessment ID: **{new_assessment_id}**")
-            
-            # ==================================================================
-            #                          STEP 3: Find Unit ID(s)
-            # ==================================================================
+            result["Details"] += f"New ID: {new_assessment_id}; "
+
+            # STEP 3: Find Unit ID(s)
             st.subheader("Step 3: Finding Unit ID(s)")
             assess_level_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/nw_assessments_core/assessmentlevel/"
             driver.get(assess_level_url)
@@ -177,20 +206,20 @@ def perform_automation(username, password, assessment_data):
                     st.warning(f"Page refreshed. Retrying to read Unit IDs (Attempt {attempts}/3)...")
                     time.sleep(1)
             
-            if not unit_ids and attempts == 3:
-                st.error("Could not read Unit IDs after 3 attempts. Page might be unstable.")
+            if not unit_ids:
+                st.error("Could not find any Unit IDs.")
+                result["Details"] += "No Unit IDs found; "
+                results.append(result)
+                progress_bar.progress((i + 1) / total_lines)
                 continue
+                
             st.success(f"✅ Found {len(unit_ids)} Unit ID(s) to process: {unit_ids}")
-            
-            # ==================================================================
-            #                          STEP 4: Enable Review for EACH Unit ID
-            # ==================================================================
+            result["Details"] += f"Found {len(unit_ids)} units; "
+
+            # STEP 4: Enable Review for EACH Unit ID
             st.subheader("Step 4: Enabling Attempt Review on Final Exam(s)")
             exam_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/nkb_exam/exam/"
 
-            if not unit_ids:
-                st.warning("No Unit IDs found to process for Step 4.")
-            
             for unit_id in unit_ids:
                 st.write(f"--- Processing Unit ID: **{unit_id}** ---")
                 driver.get(exam_url)
@@ -218,41 +247,84 @@ def perform_automation(username, password, assessment_data):
                 driver.find_element(By.NAME, "_save").click()
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "li.success")))
                 st.success(f"✅ Final save complete for Unit ID: {unit_id}")
+                result["Details"] += f"Enabled review for {unit_id}; "
             
         except Exception as e:
             st.error(f"❌ Failed while processing ID: **{original_assess_id}**. See error below.")
             st.exception(e)
-            continue
+            result["Status"] = "Failed"
+            result["Details"] += f"Error: {str(e)}"
         finally:
+            results.append(result)
             progress_bar.progress((i + 1) / total_lines)
 
     driver.quit()
+    
+    # Display results summary
+    st.subheader("📊 Processing Summary")
+    results_df = pd.DataFrame(results)
+    st.dataframe(results_df)
+    
     st.success("🎉🎉🎉 All tasks complete! The robot has finished its work.")
     st.balloons()
 
-
-# --- Streamlit User Interface ---
-st.set_page_config(page_title="Assessment Automation", layout="wide")
-st.title("🚀 Full Assessment Workflow Automation Tool")
-st.markdown("This tool performs the complete, multi-step process for enabling assessment reviews.")
-st.warning("**IMPORTANT:** Please use your secure, updated password.", icon="🔒")
-col1, col2 = st.columns([1, 2])
-with col1:
-    st.header("1. Login Credentials")
-    username = st.text_input("Django Admin Username")
-    password = st.text_input("Django Admin Password", type="password")
-with col2:
-    st.header("2. Assessment Data")
-    st.markdown("**CRITICAL:** Paste data in the format `ID, CompletionDateTime`. Each entry must be on a new line.")
-    st.code("Example:\nbf637137-1915-47fa-81c0-6b0a14916220, 2023-10-27 15:30:00\nOR\n9f3c4f8e-c2d2-4f44-b87e-f42950a02a3c, 2025-02-28 13:00")
-    assessment_data_input = st.text_area(
-        "Paste 'Org Assess ID, YYYY-MM-DD HH:MM:SS' here:", 
-        height=250
+# ==================================================================
+# === Streamlit UI ===
+# ==================================================================
+def main():
+    st.set_page_config(
+        page_title="Assessment Automation",
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
-st.divider()
-if st.button("▶️ Start Automation", type="primary", use_container_width=True):
-    if not username or not password or not assessment_data_input:
-        st.error("Please fill in all fields: Username, Password, and at least one Assessment.")
-    else:
-        with st.spinner("Automation in progress... A Chrome window will open. Please do not close it."):
-            perform_automation(username, password, assessment_data_input)
+    
+    st.title("🚀 Full Assessment Workflow Automation Tool")
+    st.markdown("""
+        This tool performs the complete, multi-step process for enabling assessment reviews.
+        **Important:** Processing may take several minutes depending on the number of assessments.
+    """)
+    
+    with st.expander("🔒 Security Notice"):
+        st.warning("""
+            - Never share your admin credentials
+            - This session is not persistent - credentials are not stored
+            - For security, close the browser after completing your tasks
+        """)
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.header("1. Admin Credentials")
+        username = st.text_input("Django Admin Username")
+        password = st.text_input("Django Admin Password", type="password")
+        
+    with col2:
+        st.header("2. Assessment Data")
+        st.markdown("""
+            **Required Format:**  
+            `AssessmentID, CompletionDateTime`  
+            One entry per line
+        """)
+        
+        example_data = """bf637137-1915-47fa-81c0-6b0a14916220, 2023-10-27 15:30:00
+9f3c4f8e-c2d2-4f44-b87e-f42950a02a3c, 2025-02-28 13:00:00"""
+        
+        assessment_data_input = st.text_area(
+            "Paste assessment data below:",
+            height=250,
+            placeholder=example_data
+        )
+    
+    st.divider()
+    
+    if st.button("▶️ Start Automation", type="primary", use_container_width=True):
+        if not username or not password:
+            st.error("Please enter both username and password")
+        elif not assessment_data_input or len(assessment_data_input.strip()) == 0:
+            st.error("Please paste assessment data to process")
+        else:
+            with st.spinner("🚦 Automation in progress - please don't close this tab..."):
+                perform_automation(username, password, assessment_data_input)
+
+if __name__ == "__main__":
+    main()
