@@ -10,28 +10,28 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 
 from selenium.webdriver.chrome.options import Options
+
 import time
 from datetime import datetime
 
-
+# ==================================================================
 # === Chrome Driver Setup (Local Execution) ===
-
-# This function sets up the Chrome WebDriver for local execution.
-# Durga Babu Updated Code
+# ==================================================================
 
 @st.cache_resource
 def setup_driver():
-    """Setup Chromium WebDriver for Streamlit Cloud"""
+    """Setup Chrome WebDriver using webdriver_manager"""
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920x1080")
-    chrome_options.binary_location = "/usr/bin/chromium"  # ✅ Use system chromium
-
-    service = Service("/usr/bin/chromedriver")  # ✅ Use matching system chromedriver
+    
+    # Let webdriver_manager handle versioning
+    service = Service(ChromeDriverManager().install())
     return webdriver.Chrome(service=service, options=chrome_options)
+
 
 # ==================================================================
 # === Helper Functions for Stale Elements ===
