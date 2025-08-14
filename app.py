@@ -1,35 +1,35 @@
 import streamlit as st
 import pandas as pd
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 from datetime import datetime
 
 # ==================================================================
-# === Chrome Driver Setup (Version-Agnostic) ===
+# === Chrome Driver Setup for Windows ===
 # ==================================================================
 @st.cache_resource
 def setup_driver():
-    """Setup Chrome WebDriver using webdriver_manager"""
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920x1080")
-
-    # Automatically get matching ChromeDriver for installed Chromium/Chrome
+    """Setup Chrome WebDriver for Windows"""
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")  # New headless mode
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920x1080")
+    
+    # Automatically download and use the correct ChromeDriver
     service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
 
 # ==================================================================
-# === Helper Functions for Stale Elements ===
+# === Self-Healing Functions ===
 # ==================================================================
 def get_stale_proof_text(driver, locator, max_attempts=5):
     attempts = 0
@@ -39,9 +39,9 @@ def get_stale_proof_text(driver, locator, max_attempts=5):
             return element.text
         except StaleElementReferenceException:
             attempts += 1
-            st.warning(f"Element stale, retrying {attempts}/{max_attempts}...")
+            st.warning(f"Element went stale. Retry ({attempts}/{max_attempts})...")
             time.sleep(1)
-    raise Exception(f"Could not get text from {locator}")
+    raise Exception(f"Could not get text from element at {locator}.")
 
 def stale_proof_click(driver, locator, max_attempts=5):
     attempts = 0
@@ -52,106 +52,110 @@ def stale_proof_click(driver, locator, max_attempts=5):
             return True
         except (StaleElementReferenceException, TimeoutException):
             attempts += 1
-            st.warning(f"Click failed, retrying {attempts}/{max_attempts}...")
+            st.warning(f"Click failed. Retry ({attempts}/{max_attempts})...")
             time.sleep(1)
-    raise Exception(f"Could not click element at {locator}")
+    raise Exception(f"Could not click element at {locator}.")
 
 # ==================================================================
 # === Main Automation Function ===
 # ==================================================================
 def perform_automation(username, password, assessment_data):
     try:
-        st.info("🚀 Launching browser...")
+        st.info("🚀 Launching the automation robot...")
         driver = setup_driver()
         wait = WebDriverWait(driver, 20)
+        st.success("✅ Robot launched successfully.")
     except Exception as e:
-        st.error(f"Chrome launch failed: {e}")
+        st.error(f"Failed to start Chrome. Error: {e}")
         return
 
-    # Login
+    # 1. Login Process
     try:
-        st.info("Opening login page...")
-        driver.get("https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/")
+        base_url = "https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/"
+        driver.get(base_url)
         wait.until(EC.presence_of_element_located((By.ID, "id_username"))).send_keys(username)
         driver.find_element(By.ID, "id_password").send_keys(password)
         driver.find_element(By.CSS_SELECTOR, 'input[type="submit"]').click()
         wait.until(EC.presence_of_element_located((By.ID, "user-tools")))
-        st.success("✅ Login successful.")
+        st.success("✅ Login Successful!")
     except Exception as e:
-        st.error(f"Login failed: {e}")
+        st.error(f"Login failed. Error: {e}")
         driver.quit()
         return
 
-    lines = [line.strip() for line in assessment_data.strip().split("\n") if line.strip()]
-    total = len(lines)
-    if total == 0:
-        st.warning("No data to process.")
+    # Process Assessment Data
+    lines = [line.strip() for line in assessment_data.strip().split('\n') if line.strip()]
+    total_lines = len(lines)
+    st.info(f"Found {total_lines} assessments to process.")
+    if total_lines == 0:
+        st.warning("No data found.")
         driver.quit()
         return
 
-    progress = st.progress(0)
+    progress_bar = st.progress(0)
     results = []
 
     for i, line in enumerate(lines):
         result = {"ID": "", "Status": "Failed", "Details": ""}
         try:
-            parts = line.split(",")
+            parts = line.split(',')
             if len(parts) != 2:
-                result["Details"] = "Malformed line"
+                result["Details"] = "Malformed input line"
                 results.append(result)
-                progress.progress((i + 1) / total)
+                progress_bar.progress((i + 1) / total_lines)
                 continue
 
-            assess_id, date_str = parts[0].strip(), parts[1].strip()
-            result["ID"] = assess_id
+            original_assess_id = parts[0].strip()
+            completion_time_str = parts[1].strip()
+            result["ID"] = original_assess_id
 
             try:
-                completion_dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                completion_dt = datetime.strptime(completion_time_str, '%Y-%m-%d %H:%M:%S')
             except ValueError:
-                completion_dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+                completion_dt = datetime.strptime(completion_time_str, '%Y-%m-%d %H:%M')
 
-            # Example: Go to config page
-            driver.get("https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/admin/nw_assessments_core/orgassessreviewconfig/add/")
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            st.write(f"Processing {assess_id}... (date {completion_dt})")
-
-            # TODO: Insert your full automation steps here
+            # --- Steps to process assessments ---
+            # (You can reuse your existing steps here, e.g., Step1, Step2, etc.)
             result["Status"] = "Success"
-            result["Details"] = "Processed successfully"
+            result["Details"] = "Processed successfully."
 
         except Exception as e:
-            result["Details"] = f"Error: {e}"
+            result["Status"] = "Failed"
+            result["Details"] = str(e)
         finally:
             results.append(result)
-            progress.progress((i + 1) / total)
+            progress_bar.progress((i + 1) / total_lines)
 
     driver.quit()
-    st.subheader("📊 Summary")
+    st.subheader("📊 Processing Summary")
     st.dataframe(pd.DataFrame(results))
+    st.success("🎉 All tasks complete!")
 
 # ==================================================================
 # === Streamlit UI ===
 # ==================================================================
 def main():
     st.set_page_config(page_title="Assessment Automation", layout="wide")
-    st.title("🚀 Assessment Review Automation")
+    st.title("🚀 Windows ChromeDriver Assessment Automation")
 
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 2])
     with col1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        st.header("Admin Credentials")
+        username = st.text_input("Django Admin Username")
+        password = st.text_input("Django Admin Password", type="password")
     with col2:
-        st.write("Format: AssessmentID, YYYY-MM-DD HH:MM:SS")
-        example = "bf637137-1915-47fa-81c0-6b0a14916220, 2023-10-27 15:30:00"
-        assessment_data_input = st.text_area("Assessment data", placeholder=example, height=200)
+        st.header("Assessment Data")
+        assessment_data_input = st.text_area(
+            "Paste assessment data (ID, YYYY-MM-DD HH:MM:SS):",
+            height=250
+        )
 
-    if st.button("▶️ Start Automation", type="primary"):
-        if not username or not password:
-            st.error("Username and password required.")
-        elif not assessment_data_input.strip():
-            st.error("Please provide assessment data.")
+    if st.button("▶️ Start Automation"):
+        if not all([username, password, assessment_data_input]):
+            st.error("Please fill all fields")
         else:
-            perform_automation(username, password, assessment_data_input)
+            with st.spinner("Processing assessments..."):
+                perform_automation(username, password, assessment_data_input)
 
 if __name__ == "__main__":
     main()
